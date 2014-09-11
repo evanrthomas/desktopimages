@@ -23,6 +23,10 @@ def sendMessage(message):
         # Send data
         print 'sending "%s"' % message
         sock.sendall(message)
+        s = sock.recv(1024)
+        while s != "":
+            print s
+            s = sock.recv(1024)
     finally:
         sock.close()
 

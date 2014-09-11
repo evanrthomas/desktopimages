@@ -2,8 +2,7 @@ import os
 from sys import platform
 from os.path import join as join_path
 from subprocess import Popen, PIPE
-
-scriptPath = os.path.dirname(os.path.realpath(__file__))
+scriptDirectory = os.path.dirname(os.path.realpath(__file__))
 
 def load():
 
@@ -66,12 +65,12 @@ killall Dock'''
 			if not os.path.exists(clientPath):
 				print "Creating Client Agent"
 				with open(clientPath, 'w') as client:
-					client.write(ClientXML % join_path(scriptPath, "client.py"))
+					client.write(ClientXML % join_path(scriptDirectory, "client.py"))
 				os.chmod(clientPath, 0644)
 			if not os.path.exists(serverPath):
 				print "Creating Server Agent"
 				with open(serverPath, 'w') as client:
-					client.write(ServerXML % join_path(scriptPath, "daemon.py"))
+					client.write(ServerXML % join_path(scriptDirectory, "daemon.py"))
 				os.chmod(serverPath, 0644)
 			Popen(['launchctl','load', clientPath])
 
@@ -101,14 +100,14 @@ killall Dock'''
 			return ""
 
 		def windows_createCronJobs():
-			if not os.path.exists(join_path(scriptPath, 'client.bat')):
+			if not os.path.exists(join_path(scriptDirectory, 'client.bat')):
 				print "Generating client.bat, please schedule a daily task for this batch file"
 				with open('client.bat', 'w') as f:
-					f.write("python "+join_path(scriptPath, 'client.py') +" dailyUpdate")
-			if not os.path.exists(join_path(scriptPath, 'daemon.bat')):
+					f.write("python "+join_path(scriptDirectory, 'client.py') +" dailyUpdate")
+			if not os.path.exists(join_path(scriptDirectory, 'daemon.bat')):
 				print "Generating daemon.bat, please schedule a task to run on boot for this batch file"
 				with open('daemon.bat', 'w') as f:
-					f.write("start /B python "+join_path(scriptPath, 'client.py') +" dailyUpdate")
+					f.write("start /B python "+join_path(scriptDirectory, 'client.py') +" dailyUpdate")
 
 		def windows_async_start():
 			pass
@@ -144,7 +143,7 @@ killall Dock'''
 				iter.next()
 			except StopIteration:
 				print 'Installing Client Cron Task'
-				job = cron_client.new(scriptPath+ "/client.py dailyUpdate",
+				job = cron_client.new(scriptDirectory+ "/client.py dailyUpdate",
 					comment="Desktop Image Changer client")
 				job.every().dom()
 				cron_client.write()
@@ -156,7 +155,7 @@ killall Dock'''
 				iter.next()
 			except StopIteration:
 				print 'Installing Daemon Cron Task'
-				job = cron_daemon.new(scriptPath+ "/daemon.py &",
+				job = cron_daemon.new(scriptDirectory+ "/daemon.py &",
 					comment="Desktop Image Changer daemon")
 				job.every_reboot()
 				cron_daemon.write()

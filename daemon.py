@@ -1,15 +1,14 @@
 #!/usr/bin/python
 import socket, sys, os, urllib, urllib2, json, sqlite3, random, imghdr, time, traceback
+from time import localtime, strftime
 from os.path import join as join_path
-import os_specific 
+import os_specific
 
 scriptDirectory = os.path.dirname(os.path.realpath(__file__))
-# server_address = scriptDirectory + 'uds_socket'
 server_address = ('localhost', 8888)
 images_directory = 'pics'
 
-
-conn = None
+conn, sock, logfile = None, None, None
 last = time.time()-3600
 #TODO: change schema so no two urls or names can be the same
 #db schema   name url liked-default-0 priority-defalut-0 ignore-default-0
@@ -30,17 +29,18 @@ last = time.time()-3600
 # -----------------------------------------------
 def start():
     #connect to db
-    global conn
-    print 'Connecting To Pics DB'
+    global conn, sock, logfile
+    logfile = open(scriptDirectory + '/log.log', 'a');
+    printAll('Connecting To Pics DB')
     conn = sqlite3.connect(join_path(scriptDirectory, 'desktopPics.db'))
     c = conn.cursor()
     c.execute('create table if not exists data (name text, url text primary key, liked integer default 0, priority integer default 0, ignore integer default 0)')
     conn.commit()
-    sock = makeDomainSocket()
+    serversocket = initSocket()
 
     dir_path = join_path(scriptDirectory, images_directory)
     if not os.path.exists(dir_path):
-        print "Created Image Directory: ", dir_path
+        printAll("Created Image Directory: ", dir_path)
         os.makedirs(dir_path)
     createCronJobs()
 
@@ -49,37 +49,28 @@ def start():
     while True:
         # Wait for a connection
         #TODO: when get info from client, handle it and close connection, wait to accept another
-        connection, client_address = sock.accept()
-        connection.settimeout(None)
+        sock, client_address = serversocket.accept()
+        sock.settimeout(None)
         try:
             # Receive the data in small chunks and retransmit it
-            data = connection.recv(1024) #YUNO BLOCK!!!!
-            print 'received "%s"' % data
+            data = sock.recv(1024) #YUNO BLOCK!!!!
+            log('received "%s"' % data)
             if data == "":
                 continue
             handle(data)
         finally:
             # Clean up the connection
-            connection.close()
+            sock.close()
 
 
 
-def makeDomainSocket():
-    # Make sure the socket does not already exist
-    # try:
-    #     os.unlink(server_address)
-    # except OSError:
-    #     if os.path.exists(server_address):
-    #         raise
-
-    # Create a UDS socket
-    sock =  socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    # Bind the socket to the port
-    print 'Starting up socket listner on(%s, %s)' % server_address
-    sock.bind(server_address)
-
-    sock.listen(1)
-    return sock
+def initSocket():
+    serversocket =  socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    printAll('Starting up socket listner on(%s, %s)' % server_address)
+    serversocket.bind(server_address)
+    serversocket.listen(1)
+    return serversocket
 
 
 #------------------------------------------------
@@ -88,7 +79,7 @@ def makeDomainSocket():
 
 def pullPornImages(subreddit):
     #TODO: handle flickr with beautiful soup
-    print "Pulling from ", subreddit
+    printAll("Pulling from ", subreddit)
     url = 'failed on subreddit url'
     try:
         response = urllib2.urlopen("http://www.reddit.com/r/%s/top/.json?sort=top&t=all" % subreddit)
@@ -99,11 +90,10 @@ def pullPornImages(subreddit):
             downloadImage(url,name, 1)
     except (urllib2.HTTPError, urllib2.URLError) as e:
         # traceback.format_exc()
-        print url
-        # print e.message
+        printAll(url)
 
 def pullBingImages():
-    print 'Pulling from Bing image of the day'
+    printAll('Pulling from Bing image of the day')
     url =  'failed on bing url'
     try:
         response = urllib2.urlopen('http://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=en-US')
@@ -113,7 +103,7 @@ def pullBingImages():
             name =  image['startdate']
             downloadImage(url, name, 0)
     except (urllib2.HTTPError, urllib2.URLError) as e:
-        print "Exception was thrown", e, url
+        printAll("Exception was thrown", e, url)
         # traceback.format_exc()
 
 
@@ -138,18 +128,35 @@ def downloadImage(url, name, priority):
             os.unlink(path)
     # except (urllib.error.HTTPError, urllib.error.URLError) as e:
     except Exception as e:
-        print "Exception was thrown", e, url
+        printAll("Exception was thrown", e, url)
         traceback.format_exc()
 
 
 def genrate_path(name):
     return join_path(scriptDirectory, images_directory, name)
 
+def log(*args):
+    s = ' '.join(args)
+    print s
+    datetime_prefix = strftime("%Y-%m-%d %H:%M:%S", localtime())
+    if args != ('\n',):
+        logfile.write("[%s]\t%s\n" % (datetime_prefix, s))
+    else:
+        logfile.write("\n")
+    logfile.flush()
+
+def printAll(*args):
+    log(*args)
+    s = ' '.join(args)
+    if sock != None:
+        sock.sendall(s)
+
 # ------------------------------------------------------
 # ----------------- Commands From Client----------------
 # ------------------------------------------------------
 def handle(command):
     global last
+    log("\n")
     if command == "thumbsUp":
         thumbsUp(getDesktopImage())
     elif command == "thumbsDown":
@@ -158,21 +165,25 @@ def handle(command):
         next()
     elif command == "dailyUpdate":
         if time.time() - last > 3600:
-            print "Running dailyUpdate at ", time.time()
+            printAll("Running dailyUpdate at ", time.time())
             next()
             last = time.time()
         else:
-            print "daily update watinging till", 3600-(time.time()-last), "seconds" 
+            print "daily update watinging till", 3600-(time.time()-last), "seconds"
     elif command == "quit":
+        printAll("closing server")
         sys.exit(0)
     else:
-        print "command %s is not in the protocol" % command
+        printAll("%s is not a valid command" % command)
+        return
+    printAll("success: " + command)
+
 
 def next():
     pullBingImages()
     for subreddit in ['waterporn', 'fireporn', 'earthporn', 'cloudporn']:
         pullPornImages(subreddit)
-    print 'Done Pulling Images'
+    printAll('Done Pulling Images')
     c = conn.cursor()
     array = []
     count = 0
@@ -180,13 +191,13 @@ def next():
         array = c.execute("select name, rowid from data where priority=? and ignore=0", (count,)).fetchall()
         count+=1
     if count > 5:
-        print "you have no fresh images"
+        printAll("you have no fresh images")
     selected = random.choice(array)
     name, id = selected
     c.execute("update data set priority=5 where rowid=?", (id,))
     conn.commit()
     path = genrate_path(name)
-    print "changing image"
+    printAll("changing image")
     setDesktopImage(path)
 
 def thumbsDown(imageName):
@@ -205,5 +216,3 @@ def thumbsUp(imageName):
 
 if __name__ == "__main__":
     start()
-    # path = "/Users/G/Pictures/Desktop/tree.jpg"
-    # set_desktop_background(path)
